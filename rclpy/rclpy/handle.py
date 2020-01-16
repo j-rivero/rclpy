@@ -1,4 +1,4 @@
-# Copyright 2019 Open Source Robotics Foundation, Inc.
+# Copyright 2019-2020 Open Source Robotics Foundation, Inc.
 #
 # Licensed under the Apache License, Version 2.0 (the "License");
 # you may not use this file except in compliance with the License.
@@ -13,9 +13,9 @@
 # limitations under the License.
 
 from threading import RLock
-import weakref
 
 from rclpy.impl.implementation_singleton import rclpy_pycapsule_implementation as _rclpy_capsule
+from rclpy.impl.implementation_singleton import rclpy_handle_implementation as _rclpy_handle
 
 
 class InvalidHandle(Exception):
@@ -24,18 +24,15 @@ class InvalidHandle(Exception):
 
 class Handle:
     """
-    Wrap a pycapsule object for thread-safe early destruction.
-
+    Wraps a `rclpy_handle_t` pycapsule object for thread-safe early destruction.
     This is intended to be used as a context manager, meaning using the ``with`` keyword.
 
     ::
     with subscription.handle as pycapsule:
         ...
 
-    This class assumes the passed pycapsule has a destructor.
-    When this class destroys the capsule, it will call the destructor.
-    Then it will set the destructor to NULL so it is not called a second time when the capsule is
-    garbage collected.
+    :meth:`destroy` allows early destruction of the pycapsule.
+    The managed `rclpy_handle_t` will not be destructed until all its dependents are destructed.
     If :meth:`destroy` is never called then the pycapsule will be destructed when it is
     garbage collected.
     """
@@ -46,14 +43,10 @@ class Handle:
         self.__request_invalidation = False
         self.__valid = True
         self.__rlock = RLock()
-        # Create this early because RLock() can raise during interpeter shutdown
-        self.__dependents_rlock = RLock()
-        self.__required_handles = []
-        self.__dependent_handles = weakref.WeakSet()
         self.__destroy_callbacks = []
         # Called to give an opportunity to raise an exception if the object is not a pycapsule.
-        self.__capsule_name = _rclpy_capsule.rclpy_pycapsule_name(pycapsule)
         self.__capsule_pointer = _rclpy_capsule.rclpy_pycapsule_pointer(pycapsule)
+        self.__handle_name = _rclpy_handle.rclpy_handle_get_name(pycapsule)
 
     def __bool__(self):
         """Return True if the handle is valid."""
@@ -68,18 +61,17 @@ class Handle:
     @property
     def name(self):
         """
-        Get the name of the managed pycapsule.
+        Get the name of the managed handle.
 
-        rclpy uses the name of the C type the pycapsule holds a pointer to.
-
-        :return: name of the pycapsule
+        :return: name of the handle
         """
-        return self.__capsule_name
+        return self.__handle_name
 
     @property
     def pointer(self):
         """
         Get the address held by the managed pycapsule.
+        This is the address of the handle, not the address of the object managed by the handle.
 
         :return: address of the pycapsule
         """
@@ -87,7 +79,12 @@ class Handle:
 
     def destroy(self, then=None):
         """
-        Destroy pycapsule as soon as possible without waiting for garbage collection.
+        Destroy the pycapsule as soon as possible without waiting for garbage collection.
+
+        The managed `rclpy_handle_t` object will not be destructed immediately if another handle
+        called `other.requires(this)`.
+        In that case, the managed object will be destroyed after all its
+        dependents are destroyed.
 
         :param then: callback to call after handle has been destroyed.
         """
@@ -102,20 +99,15 @@ class Handle:
 
     def requires(self, req_handle):
         """
-        Indicate that this handle requires another handle to live longer than itself.
-
-        Calling :meth:`destroy` on the passed in handle will cause this handle to be
-        destroyed first.
-        This handle will hold a reference to the passed in handle so the required handle is
-        garbage collected after this handle in case :meth:`destroy` is not called.
+        Indicate that the object manged by `req_handle` has to live longer than the object
+        managed by this handle.
         """
         assert isinstance(req_handle, Handle)
         with self.__rlock, req_handle.__rlock:
             if not self.__valid:
                 raise InvalidHandle('Cannot require a new handle if already destroyed')
             if req_handle.__valid:
-                self.__required_handles.append(req_handle)
-                req_handle.__dependent_handles.add(self)
+                _rclpy_handle.rclpy_handle_add_dependency(self.__capsule, req_handle.__capsule)
             else:
                 # required handle destroyed before we could link to it, destroy self
                 self.destroy()
@@ -159,42 +151,10 @@ class Handle:
         assert self.__request_invalidation
         # mark as invalid so no one else tries to use it
         self.__valid = False
-        self.__destroy_dependents(then=self.__destroy_self)
 
-    def __destroy_dependents(self, then):
-        # assumes self.__rlock is held
-        deps_lock = self.__dependents_rlock
-        # Turn weak references to regular references
-        dependent_handles = list(self.__dependent_handles)
-
-        if not dependent_handles:
-            # no dependents to wait on
-            then()
-            return
-
-        def remove_dependent(handle):
-            nonlocal dependent_handles
-            nonlocal deps_lock
-            nonlocal then
-            with deps_lock:
-                dependent_handles.remove(handle)
-                if 0 == len(dependent_handles):
-                    # all dependents destroyed, do what comes next
-                    then()
-
-        for dep in self.__dependent_handles:
-            try:
-                dep.destroy(then=remove_dependent)
-            except InvalidHandle:
-                # Dependent was already destroyed
-                remove_dependent(dep)
-
-    def __destroy_self(self):
         with self.__rlock:
             # Calls pycapsule destructor
             _rclpy_capsule.rclpy_pycapsule_destroy(self.__capsule)
             # Call post-destroy callbacks
             while self.__destroy_callbacks:
                 self.__destroy_callbacks.pop()(self)
-            # get rid of references to other handles to break reference cycles
-            del self.__required_handles

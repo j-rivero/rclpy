@@ -158,14 +158,16 @@ class Node:
         if not self._context.ok():
             raise NotInitializedException('cannot create node')
         try:
-            self.__handle = Handle(_rclpy.rclpy_create_node(
-                node_name,
-                namespace,
-                self._context.handle,
-                cli_args,
-                use_global_arguments,
-                enable_rosout
-            ))
+            with self._context.handle as capsule:
+                self.__handle = Handle(_rclpy.rclpy_create_node(
+                    node_name,
+                    namespace,
+                    capsule,
+                    cli_args,
+                    use_global_arguments,
+                    enable_rosout
+                ))
+            self.__handle.requires(context.handle)
         except ValueError:
             # these will raise more specific errors if the name or namespace is bad
             validate_node_name(node_name)

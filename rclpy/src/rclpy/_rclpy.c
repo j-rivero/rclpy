@@ -38,6 +38,7 @@
 #include <rosidl_generator_c/message_type_support_struct.h>
 
 #include "rclpy_common/common.h"
+#include "./rclpy_handle.h"
 #include "./_rclpy_qos_event.c"
 
 static PyObject * RCLInvalidROSArgsError;
@@ -46,10 +47,14 @@ static PyObject * NodeNameNonExistentError;
 static PyObject * RCLError;
 
 void
-_rclpy_context_capsule_destructor(PyObject * capsule)
+_rclpy_context_handle_destructor(void * p)
 {
-  rcl_context_t * context = (rcl_context_t *)PyCapsule_GetPointer(capsule, "rcl_context_t");
+  rcl_context_t * context = p;
   if (!context) {
+    // Warning should use line number of the current stack frame
+    int stack_level = 1;
+    PyErr_WarnFormat(
+      PyExc_RuntimeWarning, stack_level, "_rclpy_context_handle_destructor failed to get pointer");
     return;
   }
   if (NULL != context->impl) {
@@ -94,25 +99,22 @@ _rclpy_context_capsule_destructor(PyObject * capsule)
 static PyObject *
 rclpy_create_context(PyObject * Py_UNUSED(self), PyObject * Py_UNUSED(args))
 {
-  rcl_context_t * context = (rcl_context_t *)PyMem_Malloc(sizeof(rcl_context_t));
+  rcl_context_t * context = PyMem_Malloc(sizeof(rcl_context_t));
   if (!context) {
     PyErr_Format(PyExc_MemoryError, "Failed to allocate memory for context");
     return NULL;
   }
   *context = rcl_get_zero_initialized_context();
   // if it fails, error is set and NULL is returned as it should
-  return PyCapsule_New(context, "rcl_context_t", _rclpy_context_capsule_destructor);
+  return rclpy_create_handle_capsule(context, "rcl_context_t", _rclpy_context_handle_destructor);
 }
 
-/// PyCapsule destructor for guard condition
+/// Handle destructor for guard condition
 static void
-_rclpy_destroy_guard_condition(PyObject * pyentity)
+_rclpy_destroy_guard_condition(void * p)
 {
-  rcl_guard_condition_t * gc = (rcl_guard_condition_t *)PyCapsule_GetPointer(
-    pyentity, "rcl_guard_condition_t");
+  rcl_guard_condition_t * gc = p;
   if (!gc) {
-    // Don't want to raise an exception, who knows where it will get raised.
-    PyErr_Clear();
     // Warning should use line number of the current stack frame
     int stack_level = 1;
     PyErr_WarnFormat(
@@ -150,13 +152,12 @@ rclpy_create_guard_condition(PyObject * Py_UNUSED(self), PyObject * args)
     return NULL;
   }
 
-  rcl_context_t * context = (rcl_context_t *)PyCapsule_GetPointer(pycontext, "rcl_context_t");
+  rcl_context_t * context = rclpy_handle_get_pointer(pycontext, "rcl_context_t");
   if (!context) {
     return NULL;
   }
 
-  rcl_guard_condition_t * gc =
-    (rcl_guard_condition_t *)PyMem_Malloc(sizeof(rcl_guard_condition_t));
+  rcl_guard_condition_t * gc = PyMem_Malloc(sizeof(rcl_guard_condition_t));
   if (!gc) {
     PyErr_Format(PyExc_MemoryError, "Failed to allocate memory for guard condition");
     return NULL;
@@ -173,7 +174,8 @@ rclpy_create_guard_condition(PyObject * Py_UNUSED(self), PyObject * args)
     return NULL;
   }
 
-  PyObject * pygc = PyCapsule_New(gc, "rcl_guard_condition_t", _rclpy_destroy_guard_condition);
+  PyObject * pygc = rclpy_create_handle_capsule(
+    gc, "rcl_guard_condition_t", _rclpy_destroy_guard_condition);
   if (!pygc) {
     ret = rcl_guard_condition_fini(gc);
     PyMem_Free(gc);
@@ -198,7 +200,7 @@ rclpy_trigger_guard_condition(PyObject * Py_UNUSED(self), PyObject * args)
     return NULL;
   }
 
-  rcl_guard_condition_t * gc = (rcl_guard_condition_t *)PyCapsule_GetPointer(
+  rcl_guard_condition_t * gc = rclpy_handle_get_pointer(
     pygc, "rcl_guard_condition_t");
   if (!gc) {
     return NULL;
@@ -522,7 +524,7 @@ rclpy_init(PyObject * Py_UNUSED(self), PyObject * args)
   }
   int num_args = (int)pysize_num_args;
 
-  rcl_context_t * context = (rcl_context_t *)PyCapsule_GetPointer(pycontext, "rcl_context_t");
+  rcl_context_t * context = rclpy_handle_get_pointer(pycontext, "rcl_context_t");
   if (!context) {
     Py_DECREF(pyseqlist);
     return NULL;
@@ -610,15 +612,12 @@ rclpy_init(PyObject * Py_UNUSED(self), PyObject * args)
   Py_RETURN_NONE;
 }
 
-/// PyCapsule destructor for node
+/// Handle destructor for node
 static void
-_rclpy_destroy_node(PyObject * pyentity)
+_rclpy_destroy_node(void * p)
 {
-  rcl_node_t * node = (rcl_node_t *)PyCapsule_GetPointer(
-    pyentity, "rcl_node_t");
+  rcl_node_t * node = p;
   if (!node) {
-    // Don't want to raise an exception, who knows where it will get raised.
-    PyErr_Clear();
     // Warning should use line number of the current stack frame
     int stack_level = 1;
     PyErr_WarnFormat(
@@ -671,7 +670,7 @@ rclpy_create_node(PyObject * Py_UNUSED(self), PyObject * args)
     return NULL;
   }
 
-  rcl_context_t * context = (rcl_context_t *)PyCapsule_GetPointer(pycontext, "rcl_context_t");
+  rcl_context_t * context = rclpy_handle_get_pointer(pycontext, "rcl_context_t");
   if (!context) {
     return NULL;
   }
@@ -684,7 +683,7 @@ rclpy_create_node(PyObject * Py_UNUSED(self), PyObject * args)
     return NULL;
   }
 
-  rcl_node_t * node = (rcl_node_t *)PyMem_Malloc(sizeof(rcl_node_t));
+  rcl_node_t * node = PyMem_Malloc(sizeof(rcl_node_t));
   if (!node) {
     PyErr_Format(PyExc_MemoryError, "Failed to allocate memory for node");
     return NULL;
@@ -732,7 +731,7 @@ rclpy_create_node(PyObject * Py_UNUSED(self), PyObject * args)
       PyExc_RuntimeWarning, stack_level, "Failed to fini arguments: %s",
       rcl_get_error_string().str);
   }
-  return PyCapsule_New(node, "rcl_node_t", _rclpy_destroy_node);
+  return rclpy_create_handle_capsule(node, "rcl_node_t", _rclpy_destroy_node);
 }
 
 /// Get the name of a node.
@@ -752,7 +751,7 @@ rclpy_get_node_name(PyObject * Py_UNUSED(self), PyObject * args)
     return NULL;
   }
 
-  rcl_node_t * node = (rcl_node_t *)PyCapsule_GetPointer(pynode, "rcl_node_t");
+  rcl_node_t * node = rclpy_handle_get_pointer(pynode, "rcl_node_t");
   if (!node) {
     return NULL;
   }
@@ -782,7 +781,7 @@ rclpy_get_node_namespace(PyObject * Py_UNUSED(self), PyObject * args)
     return NULL;
   }
 
-  rcl_node_t * node = (rcl_node_t *)PyCapsule_GetPointer(pynode, "rcl_node_t");
+  rcl_node_t * node = rclpy_handle_get_pointer(pynode, "rcl_node_t");
   if (!node) {
     return NULL;
   }
@@ -811,7 +810,7 @@ rclpy_get_node_logger_name(PyObject * Py_UNUSED(self), PyObject * args)
     return NULL;
   }
 
-  rcl_node_t * node = (rcl_node_t *)PyCapsule_GetPointer(pynode, "rcl_node_t");
+  rcl_node_t * node = rclpy_handle_get_pointer(pynode, "rcl_node_t");
   if (!node) {
     return NULL;
   }
@@ -836,7 +835,7 @@ _count_subscribers_publishers(PyObject * args, const char * type, count_func cou
     return NULL;
   }
 
-  rcl_node_t * node = (rcl_node_t *)PyCapsule_GetPointer(pynode, "rcl_node_t");
+  rcl_node_t * node = rclpy_handle_get_pointer(pynode, "rcl_node_t");
   if (!node) {
     return NULL;
   }
@@ -1268,15 +1267,12 @@ rclpy_expand_topic_name(PyObject * Py_UNUSED(self), PyObject * args)
   return result;
 }
 
-/// PyCapsule destructor for publisher
+/// Handles destructor for publisher
 static void
-_rclpy_destroy_publisher(PyObject * pyentity)
+_rclpy_destroy_publisher(void * p)
 {
-  rclpy_publisher_t * pub = (rclpy_publisher_t *)PyCapsule_GetPointer(
-    pyentity, "rclpy_publisher_t");
+  rclpy_publisher_t * pub = p;
   if (!pub) {
-    // Don't want to raise an exception, who knows where it will get raised.
-    PyErr_Clear();
     // Warning should use line number of the current stack frame
     int stack_level = 1;
     PyErr_WarnFormat(
@@ -1330,13 +1326,12 @@ rclpy_create_publisher(PyObject * Py_UNUSED(self), PyObject * args)
     return NULL;
   }
 
-  rcl_node_t * node = (rcl_node_t *)PyCapsule_GetPointer(pynode, "rcl_node_t");
+  rcl_node_t * node = rclpy_handle_get_pointer(pynode, "rcl_node_t");
   if (!node) {
     return NULL;
   }
 
-  rosidl_message_type_support_t * ts =
-    (rosidl_message_type_support_t *)rclpy_common_get_type_support(pymsg_type);
+  rosidl_message_type_support_t * ts = rclpy_common_get_type_support(pymsg_type);
   if (!ts) {
     return NULL;
   }
@@ -1345,7 +1340,7 @@ rclpy_create_publisher(PyObject * Py_UNUSED(self), PyObject * args)
 
   if (PyCapsule_IsValid(pyqos_profile, "rmw_qos_profile_t")) {
     void * p = PyCapsule_GetPointer(pyqos_profile, "rmw_qos_profile_t");
-    rmw_qos_profile_t * qos_profile = (rmw_qos_profile_t *)p;
+    rmw_qos_profile_t * qos_profile = p;
     publisher_ops.qos = *qos_profile;
     // TODO(jacobperron): It is not obvious why the capsule reference should be destroyed here.
     // Instead, a safer pattern would be to destroy the QoS object with its own destructor.
@@ -1378,7 +1373,8 @@ rclpy_create_publisher(PyObject * Py_UNUSED(self), PyObject * args)
     PyMem_Free(pub);
     return NULL;
   }
-  return PyCapsule_New(pub, "rclpy_publisher_t", _rclpy_destroy_publisher);
+  return rclpy_create_handle_capsule(
+    pub, "rclpy_publisher_t", _rclpy_destroy_publisher);
 }
 
 /// Publish a message
@@ -1400,7 +1396,7 @@ rclpy_publish(PyObject * Py_UNUSED(self), PyObject * args)
     return NULL;
   }
 
-  rclpy_publisher_t * pub = (rclpy_publisher_t *)PyCapsule_GetPointer(
+  rclpy_publisher_t * pub = (rclpy_publisher_t *)rclpy_handle_get_pointer(
     pypublisher, "rclpy_publisher_t");
   if (!pub) {
     return NULL;
@@ -1439,7 +1435,7 @@ rclpy_publisher_get_subscription_count(PyObject * Py_UNUSED(self), PyObject * ar
     return NULL;
   }
 
-  const rclpy_publisher_t * pub = (rclpy_publisher_t *)PyCapsule_GetPointer(
+  const rclpy_publisher_t * pub = (rclpy_publisher_t *)rclpy_handle_get_pointer(
     pypublisher, "rclpy_publisher_t");
   if (!pub) {
     return NULL;
@@ -1455,15 +1451,12 @@ rclpy_publisher_get_subscription_count(PyObject * Py_UNUSED(self), PyObject * ar
   return PyLong_FromSize_t(count);
 }
 
-/// PyCapsule destructor for timer
+/// Handle destructor for timer
 static void
-_rclpy_destroy_timer(PyObject * pyentity)
+_rclpy_destroy_timer(void * p)
 {
-  rcl_timer_t * tmr = (rcl_timer_t *)PyCapsule_GetPointer(
-    pyentity, "rcl_timer_t");
+  rcl_timer_t * tmr = (rcl_timer_t *)p;
   if (!tmr) {
-    // Don't want to raise an exception, who knows where it will get raised.
-    PyErr_Clear();
     // Warning should use line number of the current stack frame
     int stack_level = 1;
     PyErr_WarnFormat(
@@ -1510,12 +1503,12 @@ rclpy_create_timer(PyObject * Py_UNUSED(self), PyObject * args)
     return NULL;
   }
 
-  rcl_context_t * context = (rcl_context_t *)PyCapsule_GetPointer(pycontext, "rcl_context_t");
+  rcl_context_t * context = (rcl_context_t *)rclpy_handle_get_pointer(pycontext, "rcl_context_t");
   if (!context) {
     return NULL;
   }
 
-  rcl_clock_t * clock = (rcl_clock_t *) PyCapsule_GetPointer(pyclock, "rcl_clock_t");
+  rcl_clock_t * clock = (rcl_clock_t *) rclpy_handle_get_pointer(pyclock, "rcl_clock_t");
   if (!clock) {
     return NULL;
   }
@@ -1537,7 +1530,7 @@ rclpy_create_timer(PyObject * Py_UNUSED(self), PyObject * args)
     return NULL;
   }
 
-  PyObject * pytimer = PyCapsule_New(timer, "rcl_timer_t", _rclpy_destroy_timer);
+  PyObject * pytimer = rclpy_create_handle_capsule(timer, "rcl_timer_t", _rclpy_destroy_timer);
   if (!pytimer) {
     ret = rcl_timer_fini(timer);
     (void)ret;
@@ -1564,7 +1557,7 @@ rclpy_get_timer_period(PyObject * Py_UNUSED(self), PyObject * args)
     return NULL;
   }
 
-  rcl_timer_t * timer = (rcl_timer_t *)PyCapsule_GetPointer(pytimer, "rcl_timer_t");
+  rcl_timer_t * timer = (rcl_timer_t *)rclpy_handle_get_pointer(pytimer, "rcl_timer_t");
   if (!timer) {
     return NULL;
   }
@@ -1596,7 +1589,7 @@ rclpy_cancel_timer(PyObject * Py_UNUSED(self), PyObject * args)
     return NULL;
   }
 
-  rcl_timer_t * timer = (rcl_timer_t *)PyCapsule_GetPointer(pytimer, "rcl_timer_t");
+  rcl_timer_t * timer = (rcl_timer_t *)rclpy_handle_get_pointer(pytimer, "rcl_timer_t");
   if (!timer) {
     return NULL;
   }
@@ -1628,7 +1621,7 @@ rclpy_is_timer_canceled(PyObject * Py_UNUSED(self), PyObject * args)
     return NULL;
   }
 
-  rcl_timer_t * timer = (rcl_timer_t *)PyCapsule_GetPointer(pytimer, "rcl_timer_t");
+  rcl_timer_t * timer = (rcl_timer_t *)rclpy_handle_get_pointer(pytimer, "rcl_timer_t");
   if (!timer) {
     return NULL;
   }
@@ -1663,7 +1656,7 @@ rclpy_reset_timer(PyObject * Py_UNUSED(self), PyObject * args)
     return NULL;
   }
 
-  rcl_timer_t * timer = (rcl_timer_t *)PyCapsule_GetPointer(pytimer, "rcl_timer_t");
+  rcl_timer_t * timer = (rcl_timer_t *)rclpy_handle_get_pointer(pytimer, "rcl_timer_t");
   if (!timer) {
     return NULL;
   }
@@ -1694,7 +1687,7 @@ rclpy_is_timer_ready(PyObject * Py_UNUSED(self), PyObject * args)
     return NULL;
   }
 
-  rcl_timer_t * timer = (rcl_timer_t *)PyCapsule_GetPointer(pytimer, "rcl_timer_t");
+  rcl_timer_t * timer = (rcl_timer_t *)rclpy_handle_get_pointer(pytimer, "rcl_timer_t");
   if (!timer) {
     return NULL;
   }
@@ -1730,7 +1723,7 @@ rclpy_call_timer(PyObject * Py_UNUSED(self), PyObject * args)
     return NULL;
   }
 
-  rcl_timer_t * timer = (rcl_timer_t *)PyCapsule_GetPointer(pytimer, "rcl_timer_t");
+  rcl_timer_t * timer = (rcl_timer_t *)rclpy_handle_get_pointer(pytimer, "rcl_timer_t");
   if (!timer) {
     return NULL;
   }
@@ -1765,7 +1758,7 @@ rclpy_change_timer_period(PyObject * Py_UNUSED(self), PyObject * args)
     return NULL;
   }
 
-  rcl_timer_t * timer = (rcl_timer_t *)PyCapsule_GetPointer(pytimer, "rcl_timer_t");
+  rcl_timer_t * timer = (rcl_timer_t *)rclpy_handle_get_pointer(pytimer, "rcl_timer_t");
   if (!timer) {
     return NULL;
   }
@@ -1799,7 +1792,7 @@ rclpy_time_until_next_call(PyObject * Py_UNUSED(self), PyObject * args)
     return NULL;
   }
 
-  rcl_timer_t * timer = (rcl_timer_t *)PyCapsule_GetPointer(pytimer, "rcl_timer_t");
+  rcl_timer_t * timer = (rcl_timer_t *)rclpy_handle_get_pointer(pytimer, "rcl_timer_t");
   if (!timer) {
     return NULL;
   }
@@ -1830,7 +1823,7 @@ rclpy_time_since_last_call(PyObject * Py_UNUSED(self), PyObject * args)
     return NULL;
   }
 
-  rcl_timer_t * timer = (rcl_timer_t *)PyCapsule_GetPointer(pytimer, "rcl_timer_t");
+  rcl_timer_t * timer = (rcl_timer_t *)rclpy_handle_get_pointer(pytimer, "rcl_timer_t");
   if (!timer) {
     return NULL;
   }
@@ -1846,15 +1839,12 @@ rclpy_time_since_last_call(PyObject * Py_UNUSED(self), PyObject * args)
   return PyLong_FromUnsignedLongLong(elapsed_time);
 }
 
-/// PyCapsule destructor for subscription
+/// Handle destructor for subscription
 static void
-_rclpy_destroy_subscription(PyObject * pyentity)
+_rclpy_destroy_subscription(void * p)
 {
-  rclpy_subscription_t * sub = (rclpy_subscription_t *)PyCapsule_GetPointer(
-    pyentity, "rclpy_subscription_t");
+  rclpy_subscription_t * sub = (rclpy_subscription_t *)p;
   if (!sub) {
-    // Don't want to raise an exception, who knows where it will get raised.
-    PyErr_Clear();
     // Warning should use line number of the current stack frame
     int stack_level = 1;
     PyErr_WarnFormat(
@@ -1911,7 +1901,7 @@ rclpy_create_subscription(PyObject * Py_UNUSED(self), PyObject * args)
     return NULL;
   }
 
-  rcl_node_t * node = (rcl_node_t *)PyCapsule_GetPointer(pynode, "rcl_node_t");
+  rcl_node_t * node = (rcl_node_t *)rclpy_handle_get_pointer(pynode, "rcl_node_t");
   if (!node) {
     return NULL;
   }
@@ -1961,7 +1951,7 @@ rclpy_create_subscription(PyObject * Py_UNUSED(self), PyObject * args)
     return NULL;
   }
 
-  PyObject * pysubscription = PyCapsule_New(
+  PyObject * pysubscription = rclpy_create_handle_capsule(
     sub, "rclpy_subscription_t", _rclpy_destroy_subscription);
   if (!pysubscription) {
     ret = rcl_subscription_fini(&(sub->subscription), node);
@@ -1972,12 +1962,11 @@ rclpy_create_subscription(PyObject * Py_UNUSED(self), PyObject * args)
   return pysubscription;
 }
 
-/// PyCapsule destructor for client
+/// Handle destructor for client
 static void
-_rclpy_destroy_client(PyObject * pyentity)
+_rclpy_destroy_client(void * p)
 {
-  rclpy_client_t * cli = (rclpy_client_t *)PyCapsule_GetPointer(
-    pyentity, "rclpy_client_t");
+  rclpy_client_t * cli = (rclpy_client_t *)p;
   if (!cli) {
     // Don't want to raise an exception, who knows where it will get raised.
     PyErr_Clear();
@@ -2035,7 +2024,7 @@ rclpy_create_client(PyObject * Py_UNUSED(self), PyObject * args)
     return NULL;
   }
 
-  rcl_node_t * node = (rcl_node_t *)PyCapsule_GetPointer(pynode, "rcl_node_t");
+  rcl_node_t * node = (rcl_node_t *)rclpy_handle_get_pointer(pynode, "rcl_node_t");
   if (!node) {
     return NULL;
   }
@@ -2083,7 +2072,8 @@ rclpy_create_client(PyObject * Py_UNUSED(self), PyObject * args)
     PyMem_Free(client);
     return NULL;
   }
-  PyObject * pyclient = PyCapsule_New(client, "rclpy_client_t", _rclpy_destroy_client);
+  PyObject * pyclient = rclpy_create_handle_capsule(
+    client, "rclpy_client_t", _rclpy_destroy_client);
   if (!pyclient) {
     ret = rcl_client_fini(&(client->client), node);
     (void)ret;
@@ -2112,7 +2102,7 @@ rclpy_send_request(PyObject * Py_UNUSED(self), PyObject * args)
   if (!PyArg_ParseTuple(args, "OO", &pyclient, &pyrequest)) {
     return NULL;
   }
-  rclpy_client_t * client = (rclpy_client_t *)PyCapsule_GetPointer(pyclient, "rclpy_client_t");
+  rclpy_client_t * client = (rclpy_client_t *)rclpy_handle_get_pointer(pyclient, "rclpy_client_t");
   if (!client) {
     return NULL;
   }
@@ -2136,15 +2126,12 @@ rclpy_send_request(PyObject * Py_UNUSED(self), PyObject * args)
   return PyLong_FromLongLong(sequence_number);
 }
 
-/// PyCapsule destructor for service
+/// Handle destructor for service
 static void
-_rclpy_destroy_service(PyObject * pyentity)
+_rclpy_destroy_service(void * p)
 {
-  rclpy_service_t * srv = (rclpy_service_t *)PyCapsule_GetPointer(
-    pyentity, "rclpy_service_t");
+  rclpy_service_t * srv = (rclpy_service_t *)p;
   if (!srv) {
-    // Don't want to raise an exception, who knows where it will get raised.
-    PyErr_Clear();
     // Warning should use line number of the current stack frame
     int stack_level = 1;
     PyErr_WarnFormat(
@@ -2200,7 +2187,7 @@ rclpy_create_service(PyObject * Py_UNUSED(self), PyObject * args)
     return NULL;
   }
 
-  rcl_node_t * node = (rcl_node_t *)PyCapsule_GetPointer(pynode, "rcl_node_t");
+  rcl_node_t * node = (rcl_node_t *)rclpy_handle_get_pointer(pynode, "rcl_node_t");
   if (!node) {
     return NULL;
   }
@@ -2249,7 +2236,8 @@ rclpy_create_service(PyObject * Py_UNUSED(self), PyObject * args)
     return NULL;
   }
 
-  PyObject * pyservice = PyCapsule_New(srv, "rclpy_service_t", _rclpy_destroy_service);
+  PyObject * pyservice = rclpy_create_handle_capsule(
+    srv, "rclpy_service_t", _rclpy_destroy_service);
   if (!pyservice) {
     ret = rcl_service_fini(&(srv->service), node);
     (void)ret;
@@ -2279,7 +2267,7 @@ rclpy_send_response(PyObject * Py_UNUSED(self), PyObject * args)
   if (!PyArg_ParseTuple(args, "OOO", &pyservice, &pyresponse, &pyheader)) {
     return NULL;
   }
-  rclpy_service_t * srv = (rclpy_service_t *)PyCapsule_GetPointer(pyservice, "rclpy_service_t");
+  rclpy_service_t * srv = (rclpy_service_t *)rclpy_handle_get_pointer(pyservice, "rclpy_service_t");
   if (!srv) {
     return NULL;
   }
@@ -2323,7 +2311,7 @@ rclpy_service_server_is_available(PyObject * Py_UNUSED(self), PyObject * args)
     return NULL;
   }
 
-  rclpy_client_t * client = (rclpy_client_t *)PyCapsule_GetPointer(pyclient, "rclpy_client_t");
+  rclpy_client_t * client = (rclpy_client_t *)rclpy_handle_get_pointer(pyclient, "rclpy_client_t");
   if (!client) {
     return NULL;
   }
@@ -2346,12 +2334,10 @@ rclpy_service_server_is_available(PyObject * Py_UNUSED(self), PyObject * args)
 
 /// Destructor for a clock
 static void
-_rclpy_destroy_clock(PyObject * pycapsule)
+_rclpy_destroy_clock(void * p)
 {
-  rcl_clock_t * clock = (rcl_clock_t *)PyCapsule_GetPointer(pycapsule, "rcl_clock_t");
+  rcl_clock_t * clock = p;
   if (!clock) {
-    // exception was set by PyCapsule_GetPointer
-    PyErr_Clear();
     // Warning should use line number of the current stack frame
     int stack_level = 1;
     PyErr_WarnFormat(
@@ -2440,7 +2426,7 @@ rclpy_wait_set_init(PyObject * Py_UNUSED(self), PyObject * args)
     return NULL;
   }
 
-  rcl_context_t * context = (rcl_context_t *)PyCapsule_GetPointer(pycontext, "rcl_context_t");
+  rcl_context_t * context = (rcl_context_t *)rclpy_handle_get_pointer(pycontext, "rcl_context_t");
   if (!context) {
     return NULL;
   }
@@ -2521,41 +2507,41 @@ rclpy_wait_set_add_entity(PyObject * Py_UNUSED(self), PyObject * args)
   }
   if (0 == strcmp(entity_type, "subscription")) {
     rclpy_subscription_t * sub =
-      (rclpy_subscription_t *)PyCapsule_GetPointer(pyentity, "rclpy_subscription_t");
+      (rclpy_subscription_t *)rclpy_handle_get_pointer(pyentity, "rclpy_subscription_t");
     if (!sub) {
       return NULL;
     }
     ret = rcl_wait_set_add_subscription(wait_set, &(sub->subscription), &index);
   } else if (0 == strcmp(entity_type, "client")) {
     rclpy_client_t * client =
-      (rclpy_client_t *)PyCapsule_GetPointer(pyentity, "rclpy_client_t");
+      (rclpy_client_t *)rclpy_handle_get_pointer(pyentity, "rclpy_client_t");
     if (!client) {
       return NULL;
     }
     ret = rcl_wait_set_add_client(wait_set, &(client->client), &index);
   } else if (0 == strcmp(entity_type, "service")) {
     rclpy_service_t * srv =
-      (rclpy_service_t *)PyCapsule_GetPointer(pyentity, "rclpy_service_t");
+      (rclpy_service_t *)rclpy_handle_get_pointer(pyentity, "rclpy_service_t");
     if (!srv) {
       return NULL;
     }
     ret = rcl_wait_set_add_service(wait_set, &(srv->service), &index);
   } else if (0 == strcmp(entity_type, "timer")) {
     rcl_timer_t * timer =
-      (rcl_timer_t *)PyCapsule_GetPointer(pyentity, "rcl_timer_t");
+      (rcl_timer_t *)rclpy_handle_get_pointer(pyentity, "rcl_timer_t");
     if (!timer) {
       return NULL;
     }
     ret = rcl_wait_set_add_timer(wait_set, timer, &index);
   } else if (0 == strcmp(entity_type, "guard_condition")) {
     rcl_guard_condition_t * guard_condition =
-      (rcl_guard_condition_t *)PyCapsule_GetPointer(pyentity, "rcl_guard_condition_t");
+      (rcl_guard_condition_t *)rclpy_handle_get_pointer(pyentity, "rcl_guard_condition_t");
     if (!guard_condition) {
       return NULL;
     }
     ret = rcl_wait_set_add_guard_condition(wait_set, guard_condition, &index);
   } else if (0 == strcmp(entity_type, "event")) {
-    rcl_event_t * event = (rcl_event_t *)PyCapsule_GetPointer(pyentity, "rcl_event_t");
+    rcl_event_t * event = (rcl_event_t *)rclpy_handle_get_pointer(pyentity, "rcl_event_t");
     ret = rcl_wait_set_add_event(wait_set, event, &index);
   } else {
     ret = RCL_RET_ERROR;  // to avoid a linter warning
@@ -2854,7 +2840,7 @@ rclpy_take(PyObject * Py_UNUSED(self), PyObject * args)
   }
 
   rclpy_subscription_t * sub =
-    (rclpy_subscription_t *)PyCapsule_GetPointer(pysubscription, "rclpy_subscription_t");
+    (rclpy_subscription_t *)rclpy_handle_get_pointer(pysubscription, "rclpy_subscription_t");
   if (!sub) {
     return NULL;
   }
@@ -2916,7 +2902,7 @@ rclpy_take_request(PyObject * Py_UNUSED(self), PyObject * args)
   }
 
   rclpy_service_t * srv =
-    (rclpy_service_t *)PyCapsule_GetPointer(pyservice, "rclpy_service_t");
+    (rclpy_service_t *)rclpy_handle_get_pointer(pyservice, "rclpy_service_t");
   if (!srv) {
     return NULL;
   }
@@ -2992,8 +2978,7 @@ rclpy_take_response(PyObject * Py_UNUSED(self), PyObject * args)
   if (!PyArg_ParseTuple(args, "OO", &pyclient, &pyresponse_type)) {
     return NULL;
   }
-  rclpy_client_t * client =
-    (rclpy_client_t *)PyCapsule_GetPointer(pyclient, "rclpy_client_t");
+  rclpy_client_t * client = rclpy_handle_get_pointer(pyclient, "rclpy_client_t");
   if (!client) {
     return NULL;
   }
@@ -3059,7 +3044,7 @@ rclpy_ok(PyObject * Py_UNUSED(self), PyObject * args)
     return NULL;
   }
 
-  rcl_context_t * context = (rcl_context_t *)PyCapsule_GetPointer(pycontext, "rcl_context_t");
+  rcl_context_t * context = rclpy_handle_get_pointer(pycontext, "rcl_context_t");
   if (!context) {
     return NULL;
   }
@@ -3087,7 +3072,7 @@ rclpy_shutdown(PyObject * Py_UNUSED(self), PyObject * args)
     return NULL;
   }
 
-  rcl_context_t * context = (rcl_context_t *)PyCapsule_GetPointer(pycontext, "rcl_context_t");
+  rcl_context_t * context = rclpy_handle_get_pointer(pycontext, "rcl_context_t");
   if (!context) {
     return NULL;
   }
@@ -3122,7 +3107,7 @@ rclpy_get_node_names_and_namespaces(PyObject * Py_UNUSED(self), PyObject * args)
   }
 
   rcl_allocator_t allocator = rcl_get_default_allocator();
-  rcl_node_t * node = (rcl_node_t *)PyCapsule_GetPointer(pynode, "rcl_node_t");
+  rcl_node_t * node = rclpy_handle_get_pointer(pynode, "rcl_node_t");
   if (!node) {
     return NULL;
   }
@@ -3215,7 +3200,7 @@ rclpy_get_service_names_and_types_by_node(PyObject * Py_UNUSED(self), PyObject *
     return NULL;
   }
 
-  rcl_node_t * node = (rcl_node_t *)PyCapsule_GetPointer(pynode, "rcl_node_t");
+  rcl_node_t * node = rclpy_handle_get_pointer(pynode, "rcl_node_t");
   if (!node) {
     return NULL;
   }
@@ -3267,7 +3252,7 @@ rclpy_get_client_names_and_types_by_node(PyObject * Py_UNUSED(self), PyObject * 
     return NULL;
   }
 
-  rcl_node_t * node = (rcl_node_t *)PyCapsule_GetPointer(pynode, "rcl_node_t");
+  rcl_node_t * node = rclpy_handle_get_pointer(pynode, "rcl_node_t");
   if (!node) {
     return NULL;
   }
@@ -3321,7 +3306,7 @@ rclpy_get_subscriber_names_and_types_by_node(PyObject * Py_UNUSED(self), PyObjec
     return NULL;
   }
 
-  rcl_node_t * node = (rcl_node_t *)PyCapsule_GetPointer(pynode, "rcl_node_t");
+  rcl_node_t * node = rclpy_handle_get_pointer(pynode, "rcl_node_t");
   if (!node) {
     return NULL;
   }
@@ -3374,7 +3359,7 @@ rclpy_get_publisher_names_and_types_by_node(PyObject * Py_UNUSED(self), PyObject
     return NULL;
   }
 
-  rcl_node_t * node = (rcl_node_t *)PyCapsule_GetPointer(pynode, "rcl_node_t");
+  rcl_node_t * node = rclpy_handle_get_pointer(pynode, "rcl_node_t");
   if (!node) {
     return NULL;
   }
@@ -3424,7 +3409,7 @@ rclpy_get_topic_names_and_types(PyObject * Py_UNUSED(self), PyObject * args)
     return NULL;
   }
 
-  rcl_node_t * node = (rcl_node_t *)PyCapsule_GetPointer(pynode, "rcl_node_t");
+  rcl_node_t * node = rclpy_handle_get_pointer(pynode, "rcl_node_t");
   if (!node) {
     return NULL;
   }
@@ -3512,7 +3497,7 @@ rclpy_get_service_names_and_types(PyObject * Py_UNUSED(self), PyObject * args)
     return NULL;
   }
 
-  rcl_node_t * node = (rcl_node_t *)PyCapsule_GetPointer(pynode, "rcl_node_t");
+  rcl_node_t * node = rclpy_handle_get_pointer(pynode, "rcl_node_t");
   if (!node) {
     return NULL;
   }
@@ -3590,7 +3575,7 @@ cleanup:
 bool
 _convert_py_duration_to_rmw_time(PyObject * pyobject, rmw_time_t * out_time)
 {
-  rcl_duration_t * duration = (rcl_duration_t *)PyCapsule_GetPointer(pyobject, "rcl_duration_t");
+  rcl_duration_t * duration = PyCapsule_GetPointer(pyobject, "rcl_duration_t");
   if (!duration) {
     return false;
   }
@@ -3639,7 +3624,7 @@ rclpy_convert_from_py_qos_policy(PyObject * Py_UNUSED(self), PyObject * args)
     return NULL;
   }
 
-  rmw_qos_profile_t * qos_profile = (rmw_qos_profile_t *)PyMem_Malloc(sizeof(rmw_qos_profile_t));
+  rmw_qos_profile_t * qos_profile = PyMem_Malloc(sizeof(rmw_qos_profile_t));
 
   if (!qos_profile) {
     PyErr_Format(PyExc_MemoryError, "Failed to allocate memory for QoS profile");
@@ -3686,7 +3671,7 @@ rclpy_convert_to_py_qos_policy(PyObject * Py_UNUSED(self), PyObject * args)
     return NULL;
   }
 
-  rmw_qos_profile_t * profile = (rmw_qos_profile_t *)PyCapsule_GetPointer(
+  rmw_qos_profile_t * profile = PyCapsule_GetPointer(
     pyqos_profile, "rmw_qos_profile_t");
   if (!profile) {
     return NULL;
@@ -3755,7 +3740,7 @@ rclpy_assert_liveliness(PyObject * Py_UNUSED(self), PyObject * args)
   }
 
   if (PyCapsule_IsValid(pyentity, "rcl_node_t")) {
-    rcl_node_t * node = (rcl_node_t *)PyCapsule_GetPointer(pyentity, "rcl_node_t");
+    rcl_node_t * node = rclpy_handle_get_pointer(pyentity, "rcl_node_t");
     if (RCL_RET_OK != rcl_node_assert_liveliness(node)) {
       PyErr_Format(RCLError,
         "Failed assert liveliness on the Node: %s", rcl_get_error_string().str);
@@ -3763,7 +3748,7 @@ rclpy_assert_liveliness(PyObject * Py_UNUSED(self), PyObject * args)
       return NULL;
     }
   } else if (PyCapsule_IsValid(pyentity, "rclpy_publisher_t")) {
-    rclpy_publisher_t * publisher = (rclpy_publisher_t *)PyCapsule_GetPointer(
+    rclpy_publisher_t * publisher = rclpy_handle_get_pointer(
       pyentity, "rclpy_publisher_t");
     if (RCL_RET_OK != rcl_publisher_assert_liveliness(&publisher->publisher)) {
       PyErr_Format(RCLError,
@@ -3816,7 +3801,7 @@ rclpy_create_time_point(PyObject * Py_UNUSED(self), PyObject * args)
     return NULL;
   }
 
-  rcl_time_point_t * time_point = (rcl_time_point_t *) PyMem_Malloc(sizeof(rcl_time_point_t));
+  rcl_time_point_t * time_point = PyMem_Malloc(sizeof(rcl_time_point_t));
   if (!time_point) {
     PyErr_Format(PyExc_MemoryError, "Failed to allocate memory for time point.");
     return NULL;
@@ -3846,7 +3831,7 @@ rclpy_time_point_get_nanoseconds(PyObject * Py_UNUSED(self), PyObject * args)
     return NULL;
   }
 
-  rcl_time_point_t * time_point = (rcl_time_point_t *)PyCapsule_GetPointer(
+  rcl_time_point_t * time_point = PyCapsule_GetPointer(
     pytime_point, "rcl_time_point_t");
   if (!time_point) {
     return NULL;
@@ -3884,7 +3869,7 @@ rclpy_create_duration(PyObject * Py_UNUSED(self), PyObject * args)
     return NULL;
   }
 
-  rcl_duration_t * duration = (rcl_duration_t *) PyMem_Malloc(sizeof(rcl_duration_t));
+  rcl_duration_t * duration = PyMem_Malloc(sizeof(rcl_duration_t));
   if (!duration) {
     PyErr_Format(PyExc_MemoryError, "Failed to allocate memory for duration.");
     return NULL;
@@ -3913,7 +3898,7 @@ rclpy_duration_get_nanoseconds(PyObject * Py_UNUSED(self), PyObject * args)
     return NULL;
   }
 
-  rcl_duration_t * duration = (rcl_duration_t *)PyCapsule_GetPointer(
+  rcl_duration_t * duration = PyCapsule_GetPointer(
     pyduration, "rcl_duration_t");
   if (!duration) {
     return NULL;
@@ -3943,7 +3928,7 @@ rclpy_create_clock(PyObject * Py_UNUSED(self), PyObject * args)
     return NULL;
   }
 
-  rcl_clock_t * clock = (rcl_clock_t *)PyMem_Malloc(sizeof(rcl_clock_t));
+  rcl_clock_t * clock = PyMem_Malloc(sizeof(rcl_clock_t));
   if (!clock) {
     PyErr_Format(PyExc_MemoryError, "Failed to allocate memory for clock.");
     return NULL;
@@ -3958,7 +3943,7 @@ rclpy_create_clock(PyObject * Py_UNUSED(self), PyObject * args)
     return NULL;
   }
 
-  return PyCapsule_New(clock, "rcl_clock_t", _rclpy_destroy_clock);
+  return rclpy_create_handle_capsule(clock, "rcl_clock_t", _rclpy_destroy_clock);
 }
 
 /// Returns the current value of the clock
@@ -3980,13 +3965,13 @@ rclpy_clock_get_now(PyObject * Py_UNUSED(self), PyObject * args)
     return NULL;
   }
 
-  rcl_clock_t * clock = (rcl_clock_t *)PyCapsule_GetPointer(
+  rcl_clock_t * clock = rclpy_handle_get_pointer(
     pyclock, "rcl_clock_t");
   if (!clock) {
     return NULL;
   }
 
-  rcl_time_point_t * time_point = (rcl_time_point_t *) PyMem_Malloc(sizeof(rcl_time_point_t));
+  rcl_time_point_t * time_point = PyMem_Malloc(sizeof(rcl_time_point_t));
   if (!time_point) {
     PyErr_Format(PyExc_MemoryError, "Failed to allocate memory for time point.");
     return NULL;
@@ -4026,7 +4011,7 @@ rclpy_clock_get_ros_time_override_is_enabled(PyObject * Py_UNUSED(self), PyObjec
     return NULL;
   }
 
-  rcl_clock_t * clock = (rcl_clock_t *)PyCapsule_GetPointer(
+  rcl_clock_t * clock = rclpy_handle_get_pointer(
     pyclock, "rcl_clock_t");
   if (!clock) {
     return NULL;
@@ -4069,7 +4054,7 @@ rclpy_clock_set_ros_time_override_is_enabled(PyObject * Py_UNUSED(self), PyObjec
     return NULL;
   }
 
-  rcl_clock_t * clock = (rcl_clock_t *)PyCapsule_GetPointer(
+  rcl_clock_t * clock = rclpy_handle_get_pointer(
     pyclock, "rcl_clock_t");
   if (!clock) {
     return NULL;
@@ -4116,13 +4101,13 @@ rclpy_clock_set_ros_time_override(PyObject * Py_UNUSED(self), PyObject * args)
     return NULL;
   }
 
-  rcl_clock_t * clock = (rcl_clock_t *)PyCapsule_GetPointer(
+  rcl_clock_t * clock = rclpy_handle_get_pointer(
     pyclock, "rcl_clock_t");
   if (!clock) {
     return NULL;
   }
 
-  rcl_time_point_t * time_point = (rcl_time_point_t *)PyCapsule_GetPointer(
+  rcl_time_point_t * time_point = PyCapsule_GetPointer(
     pytime_point, "rcl_time_point_t");
   if (!time_point) {
     return NULL;
@@ -4253,8 +4238,7 @@ rclpy_add_clock_callback(PyObject * Py_UNUSED(self), PyObject * args)
     return NULL;
   }
 
-  rcl_clock_t * clock = (rcl_clock_t *)PyCapsule_GetPointer(
-    pyclock, "rcl_clock_t");
+  rcl_clock_t * clock = rclpy_handle_get_pointer(pyclock, "rcl_clock_t");
   if (!clock) {
     return NULL;
   }
@@ -4297,8 +4281,7 @@ rclpy_remove_clock_callback(PyObject * Py_UNUSED(self), PyObject * args)
     return NULL;
   }
 
-  rcl_clock_t * clock = (rcl_clock_t *)PyCapsule_GetPointer(
-    pyclock, "rcl_clock_t");
+  rcl_clock_t * clock = rclpy_handle_get_pointer(pyclock, "rcl_clock_t");
   if (!clock) {
     return NULL;
   }
@@ -4592,7 +4575,7 @@ rclpy_get_node_parameters(PyObject * Py_UNUSED(self), PyObject * args)
     return NULL;
   }
 
-  rcl_node_t * node = (rcl_node_t *)PyCapsule_GetPointer(node_capsule, "rcl_node_t");
+  rcl_node_t * node = rclpy_handle_get_pointer(node_capsule, "rcl_node_t");
   if (!node) {
     return NULL;
   }

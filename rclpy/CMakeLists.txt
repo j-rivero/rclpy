@@ -97,12 +97,23 @@ install(TARGETS rclpy_common
   RUNTIME DESTINATION bin
 )
 
+# Handle library, used to keep dependencies between C objects.
+add_library(
+  rclpy_handle
+  SHARED src/rclpy/_rclpy_handle.c
+)
+configure_python_c_extension_library(rclpy_handle)
+ament_target_dependencies(rclpy_handle
+  "rcutils"
+)
+
 add_library(
   rclpy
   SHARED src/rclpy/_rclpy.c
 )
 target_link_libraries(rclpy
   rclpy_common
+  rclpy_handle
 )
 
 configure_python_c_extension_library(rclpy)
