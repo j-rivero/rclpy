@@ -157,8 +157,8 @@ class Node:
         namespace = namespace or ''
         if not self._context.ok():
             raise NotInitializedException('cannot create node')
-        try:
-            with self._context.handle as capsule:
+        with self._context.handle as capsule:
+            try:
                 self.__handle = Handle(_rclpy.rclpy_create_node(
                     node_name,
                     namespace,
@@ -167,18 +167,18 @@ class Node:
                     use_global_arguments,
                     enable_rosout
                 ))
-            self.__handle.requires(context.handle)
-        except ValueError:
-            # these will raise more specific errors if the name or namespace is bad
-            validate_node_name(node_name)
-            # emulate what rcl_node_init() does to accept '' and relative namespaces
-            if not namespace:
-                namespace = '/'
-            if not namespace.startswith('/'):
-                namespace = '/' + namespace
-            validate_namespace(namespace)
-            # Should not get to this point
-            raise RuntimeError('rclpy_create_node failed for unknown reason')
+            except ValueError:
+                # these will raise more specific errors if the name or namespace is bad
+                validate_node_name(node_name)
+                # emulate what rcl_node_init() does to accept '' and relative namespaces
+                if not namespace:
+                    namespace = '/'
+                if not namespace.startswith('/'):
+                    namespace = '/' + namespace
+                validate_namespace(namespace)
+                # Should not get to this point
+                raise RuntimeError('rclpy_create_node failed for unknown reason')
+        self.__handle.requires(self._context.handle)
         with self.handle as capsule:
             self._logger = get_logger(_rclpy.rclpy_get_node_logger_name(capsule))
 

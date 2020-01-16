@@ -42,7 +42,7 @@ class Context:
         """Check if context hasn't been shut down."""
         # imported locally to avoid loading extensions on module import
         from rclpy.impl.implementation_singleton import rclpy_implementation
-        with self._lock, self._handle as capsule:
+        with self._handle as capsule, self._lock:
             return rclpy_implementation.rclpy_ok(capsule)
 
     def _call_on_shutdown_callbacks(self):
@@ -56,7 +56,7 @@ class Context:
         """Shutdown this context."""
         # imported locally to avoid loading extensions on module import
         from rclpy.impl.implementation_singleton import rclpy_implementation
-        with self._lock, self._handle as capsule:
+        with self._handle as capsule, self._lock:
             rclpy_implementation.rclpy_shutdown(capsule)
         self._call_on_shutdown_callbacks()
 
@@ -64,7 +64,7 @@ class Context:
         """Shutdown this context, if not already shutdown."""
         # imported locally to avoid loading extensions on module import
         from rclpy.impl.implementation_singleton import rclpy_implementation
-        with self._lock, self._handle as capsule:
+        with self._handle as capsule, self._lock:
             if rclpy_implementation.rclpy_ok(capsule):
                 rclpy_implementation.rclpy_shutdown(capsule)
                 self._call_on_shutdown_callbacks()
