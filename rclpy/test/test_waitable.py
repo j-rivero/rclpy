@@ -21,7 +21,6 @@ from rclpy.callback_groups import MutuallyExclusiveCallbackGroup, ReentrantCallb
 from rclpy.clock import Clock
 from rclpy.clock import ClockType
 from rclpy.executors import SingleThreadedExecutor
-from rclpy.handle import Handle
 from rclpy.impl.implementation_singleton import rclpy_implementation as _rclpy
 from rclpy.node import check_for_type_support
 from rclpy.qos import QoSProfile
@@ -149,8 +148,7 @@ class TimerWaitable(Waitable):
         """Take stuff from lower level so the wait set doesn't immediately wake again."""
         if self.timer_is_ready:
             self.timer_is_ready = False
-            with self.timer as capsule:
-                _rclpy.rclpy_call_timer(capsule)
+            _rclpy.rclpy_call_timer(self.timer)
             return 'timer'
         return None
 
@@ -167,8 +165,7 @@ class TimerWaitable(Waitable):
 
     def add_to_wait_set(self, wait_set):
         """Add entities to wait set."""
-        with self.timer as capsule:
-            self.timer_index = _rclpy.rclpy_wait_set_add_entity('timer', wait_set, capsule)
+        self.timer_index = _rclpy.rclpy_wait_set_add_entity('timer', wait_set, self.timer)
 
 
 class SubscriptionWaitable(Waitable):
@@ -254,9 +251,8 @@ class GuardConditionWaitable(Waitable):
 
     def add_to_wait_set(self, wait_set):
         """Add entities to wait set."""
-        with self.guard_condition as guard_condition_capsule:
-            self.guard_condition_index = _rclpy.rclpy_wait_set_add_entity(
-                'guard_condition', wait_set, guard_condition_capsule)
+        self.guard_condition_index = _rclpy.rclpy_wait_set_add_entity(
+            'guard_condition', wait_set, self.guard_condition)
 
 
 class MutuallyExclusiveWaitable(Waitable):
@@ -371,8 +367,7 @@ class TestWaitable(unittest.TestCase):
         self.node.add_waitable(self.waitable)
 
         thr = self.start_spin_thread(self.waitable)
-        with self.waitable.guard_condition as capsule:
-            _rclpy.rclpy_trigger_guard_condition(capsule)
+        _rclpy.rclpy_trigger_guard_condition(self.waitable.guard_condition)
         thr.join()
 
         assert self.waitable.future.done()

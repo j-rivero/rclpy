@@ -141,28 +141,21 @@ class TestQoSEvent(unittest.TestCase):
 
         deadline_event_handle = self._create_event_handle(
             publisher, QoSPublisherEventType.RCL_PUBLISHER_OFFERED_DEADLINE_MISSED)
-        wait_set.requires(deadline_event_handle)
-        with deadline_event_handle as event_capsule, wait_set as wait_set_capsule:
-            deadline_event_index = _rclpy.rclpy_wait_set_add_entity(
-                'event', wait_set_capsule, event_capsule)
+        with deadline_event_handle as capsule:
+            deadline_event_index = _rclpy.rclpy_wait_set_add_entity('event', wait_set, capsule)
         self.assertIsNotNone(deadline_event_index)
 
         liveliness_event_handle = self._create_event_handle(
             publisher, QoSPublisherEventType.RCL_PUBLISHER_LIVELINESS_LOST)
-        wait_set.requires(liveliness_event_handle)
-        with liveliness_event_handle as event_capsule, wait_set as wait_set_capsule:
-            liveliness_event_index = _rclpy.rclpy_wait_set_add_entity(
-                'event', wait_set_capsule, event_capsule)
+        with liveliness_event_handle as capsule:
+            liveliness_event_index = _rclpy.rclpy_wait_set_add_entity('event', wait_set, capsule)
         self.assertIsNotNone(liveliness_event_index)
 
         # We live in our own namespace and have created no other participants, so
         # there can't be any of these events.
-        with wait_set as wait_set_capsule:
-            _rclpy.rclpy_wait(wait_set_capsule, 0)
-            self.assertFalse(
-                _rclpy.rclpy_wait_set_is_ready('event', wait_set_capsule, deadline_event_index))
-            self.assertFalse(
-                _rclpy.rclpy_wait_set_is_ready('event', wait_set_capsule, liveliness_event_index))
+        _rclpy.rclpy_wait(wait_set, 0)
+        self.assertFalse(_rclpy.rclpy_wait_set_is_ready('event', wait_set, deadline_event_index))
+        self.assertFalse(_rclpy.rclpy_wait_set_is_ready('event', wait_set, liveliness_event_index))
 
         # Calling take data even though not ready should provide me an empty initialized message
         # Tests data conversion utilities in C side
@@ -202,28 +195,21 @@ class TestQoSEvent(unittest.TestCase):
 
         deadline_event_handle = self._create_event_handle(
             subscription, QoSSubscriptionEventType.RCL_SUBSCRIPTION_REQUESTED_DEADLINE_MISSED)
-        wait_set.requires(deadline_event_handle)
-        with deadline_event_handle as event_capsule, wait_set as wait_set_capsule:
-            deadline_event_index = _rclpy.rclpy_wait_set_add_entity(
-                'event', wait_set_capsule, event_capsule)
+        with deadline_event_handle as capsule:
+            deadline_event_index = _rclpy.rclpy_wait_set_add_entity('event', wait_set, capsule)
         self.assertIsNotNone(deadline_event_index)
 
         liveliness_event_handle = self._create_event_handle(
             subscription, QoSSubscriptionEventType.RCL_SUBSCRIPTION_LIVELINESS_CHANGED)
-        wait_set.requires(liveliness_event_handle)
-        with liveliness_event_handle as event_capsule, wait_set as wait_set_capsule:
-            liveliness_event_index = _rclpy.rclpy_wait_set_add_entity(
-                'event', wait_set_capsule, event_capsule)
+        with liveliness_event_handle as capsule:
+            liveliness_event_index = _rclpy.rclpy_wait_set_add_entity('event', wait_set, capsule)
         self.assertIsNotNone(liveliness_event_index)
 
         # We live in our own namespace and have created no other participants, so
         # there can't be any of these events.
-        with wait_set as wait_set_capsule:
-            _rclpy.rclpy_wait(wait_set_capsule, 0)
-            self.assertFalse(_rclpy.rclpy_wait_set_is_ready(
-                'event', wait_set_capsule, deadline_event_index))
-            self.assertFalse(_rclpy.rclpy_wait_set_is_ready(
-                'event', wait_set_capsule, liveliness_event_index))
+        _rclpy.rclpy_wait(wait_set, 0)
+        self.assertFalse(_rclpy.rclpy_wait_set_is_ready('event', wait_set, deadline_event_index))
+        self.assertFalse(_rclpy.rclpy_wait_set_is_ready('event', wait_set, liveliness_event_index))
 
         # Calling take data even though not ready should provide me an empty initialized message
         # Tests data conversion utilities in C side
