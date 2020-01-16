@@ -12,7 +12,7 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
-from threading import RLock
+from threading import Lock
 
 from rclpy.impl.implementation_singleton import rclpy_pycapsule_implementation as _rclpy_capsule
 from rclpy.impl.implementation_singleton import rclpy_handle_implementation as _rclpy_handle
@@ -42,7 +42,7 @@ class Handle:
         self.__use_count = 0
         self.__request_invalidation = False
         self.__valid = True
-        self.__rlock = RLock()
+        self.__lock = Lock()
         self.__destroy_callbacks = []
         # Called to give an opportunity to raise an exception if the object is not a pycapsule.
         self.__capsule_pointer = _rclpy_capsule.rclpy_pycapsule_pointer(pycapsule)
@@ -88,7 +88,7 @@ class Handle:
 
         :param then: callback to call after handle has been destroyed.
         """
-        with self.__rlock:
+        with self.__lock:
             if not self.__valid:
                 raise InvalidHandle('Asked to destroy handle, but it was already destroyed')
             if then:
@@ -103,7 +103,7 @@ class Handle:
         managed by this handle.
         """
         assert isinstance(req_handle, Handle)
-        with self.__rlock, req_handle.__rlock:
+        with self.__lock, req_handle.__lock:
             if not self.__valid:
                 raise InvalidHandle('Cannot require a new handle if already destroyed')
             if req_handle.__valid:
@@ -119,7 +119,7 @@ class Handle:
         The capsule must be returned using :meth:`_return_capsule` when it is no longer in use.
         :return: PyCapsule instance
         """
-        with self.__rlock:
+        with self.__lock:
             if not self.__valid:
                 raise InvalidHandle('Tried to use a handle that has been destroyed.')
             self.__use_count += 1
@@ -131,7 +131,7 @@ class Handle:
 
         :return: None
         """
-        with self.__rlock:
+        with self.__lock:
             # Assume _return_capsule is not called more times than _get_capsule
             assert self.__use_count > 0
             self.__use_count -= 1
@@ -152,9 +152,8 @@ class Handle:
         # mark as invalid so no one else tries to use it
         self.__valid = False
 
-        with self.__rlock:
-            # Calls pycapsule destructor
-            _rclpy_capsule.rclpy_pycapsule_destroy(self.__capsule)
-            # Call post-destroy callbacks
-            while self.__destroy_callbacks:
-                self.__destroy_callbacks.pop()(self)
+        # Calls pycapsule destructor
+        _rclpy_capsule.rclpy_pycapsule_destroy(self.__capsule)
+        # Call post-destroy callbacks
+        while self.__destroy_callbacks:
+            self.__destroy_callbacks.pop()(self)
