@@ -14,8 +14,8 @@
 
 from threading import Lock
 
-from rclpy.impl.implementation_singleton import rclpy_pycapsule_implementation as _rclpy_capsule
 from rclpy.impl.implementation_singleton import rclpy_handle_implementation as _rclpy_handle
+from rclpy.impl.implementation_singleton import rclpy_pycapsule_implementation as _rclpy_capsule
 
 
 class InvalidHandle(Exception):
@@ -25,8 +25,8 @@ class InvalidHandle(Exception):
 class Handle:
     """
     Wraps a `rclpy_handle_t` pycapsule object for thread-safe early destruction.
-    This is intended to be used as a context manager, meaning using the ``with`` keyword.
 
+    This is intended to be used as a context manager, meaning using the ``with`` keyword.
     ::
     with subscription.handle as pycapsule:
         ...
@@ -45,7 +45,7 @@ class Handle:
         self.__lock = Lock()
         self.__destroy_callbacks = []
         # Called to give an opportunity to raise an exception if the object is not a pycapsule.
-        self.__capsule_pointer = _rclpy_capsule.rclpy_pycapsule_pointer(pycapsule)
+        self.__capsule_pointer = _rclpy_handle.rclpy_handle_get_pointer(pycapsule)
         self.__handle_name = _rclpy_handle.rclpy_handle_get_name(pycapsule)
 
     def __bool__(self):
@@ -71,8 +71,8 @@ class Handle:
     def pointer(self):
         """
         Get the address held by the managed pycapsule.
-        This is the address of the handle, not the address of the object managed by the handle.
 
+        This is the address of the `rcl` object, not of the `rclpy_handle_t`.
         :return: address of the pycapsule
         """
         return self.__capsule_pointer
@@ -99,7 +99,9 @@ class Handle:
 
     def requires(self, req_handle):
         """
-        Indicate that the object manged by `req_handle` has to live longer than the object
+        Add a required handle.
+
+        Indicates that the object manged by `req_handle` has to live longer than the object
         managed by this handle.
         """
         assert isinstance(req_handle, Handle)
@@ -107,6 +109,7 @@ class Handle:
             if not self.__valid:
                 raise InvalidHandle('Cannot require a new handle if already destroyed')
             if req_handle.__valid:
+                pass
                 _rclpy_handle.rclpy_handle_add_dependency(self.__capsule, req_handle.__capsule)
             else:
                 # required handle destroyed before we could link to it, destroy self

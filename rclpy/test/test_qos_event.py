@@ -191,7 +191,7 @@ class TestQoSEvent(unittest.TestCase):
         subscription = self.node.create_subscription(EmptyMsg, 'test_topic', Mock(), 10)
         wait_set = _rclpy.rclpy_get_zero_initialized_wait_set()
         with self.context.handle as context_handle:
-            _rclpy.rclpy_wait_set_init(wait_set, 0, 0, 0, 0, 0, 2, self.context.handle)
+            _rclpy.rclpy_wait_set_init(wait_set, 0, 0, 0, 0, 0, 2, context_handle)
 
         deadline_event_handle = self._create_event_handle(
             subscription, QoSSubscriptionEventType.RCL_SUBSCRIPTION_REQUESTED_DEADLINE_MISSED)
