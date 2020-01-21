@@ -143,6 +143,9 @@ add_library(
   rclpy_signal_handler
   SHARED src/rclpy/_rclpy_signal_handler.c
 )
+target_link_libraries(rclpy_signal_handler
+  rclpy_common
+)
 configure_python_c_extension_library(rclpy_signal_handler)
 ament_target_dependencies(rclpy_signal_handler
   "rcl"
